@@ -281,6 +281,54 @@ void pure_literal_elimination(sat_t *sat) {
     }
 }
 
+bool is_unit_clause(sat_t *sat, int row, int *unit) {
+    int found = 0;
+    int lit = 0;
+    for (int j = 0; j < sat->columns; j++) {
+        if (sat->content[row][j] != 0) {
+            if (found) {
+                return false;
+            }
+            found = 1;
+            lit = sat->content[row][j] * (j + 1);
+        }
+    }
+
+    if (found) {
+        *unit = lit;
+        return true;
+    }
+    return false;
+}
+
+void propagate(sat_t *sat, int unit) {
+    int sign = (unit > 0 ? 1 : -1);
+    for (int i = 0; i < sat->rows; i++) {
+        if (sat->content[i][abs(unit) - 1] == sign) {
+            for (int j = 0; j < sat->columns; j++) {
+                sat->content[i][j] = 0;
+            }
+        } 
+        else if (sat->content[i][abs(unit) - 1] == -sign) {
+            sat->content[i][abs(unit) - 1] = 0;
+        }
+    }
+}
+
+void unit_propagation(sat_t *sat) {
+    bool changed = true;
+    while (changed) {
+        changed = false;
+        for (int i = 0; i < sat->rows; i++) {
+            int unit;
+            if (is_unit_clause(sat, i, &unit)) {
+                propagate(sat, unit);
+                changed = true;
+            }
+        }
+    }
+}
+
 
 sat_t *sat_copy(sat_t *sat){
     if (!sat) {
@@ -324,6 +372,7 @@ int main() {
     sat_t *sat2_p = sat_copy(sat_p);
 
     pure_literal_elimination(sat2_p);
+    unit_propagation(sat2_p);
     printf("\n");
 
     print_sat(sat2_p);
