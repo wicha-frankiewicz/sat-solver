@@ -4,8 +4,9 @@
 #include <string.h>
 
 typedef struct {
-    int rows;       //n.o atoms  
-    int columns;    //n.o clauses
+    int clauses;    //n.o clauses not yet satisfied
+    int rows;       //n.o clauses  
+    int columns;    //n.o atoms
     int **content;  //2d array of clauses
                     //format of 2d array:
                     // - each row is a clause
@@ -39,6 +40,7 @@ int init_sat_arr(sat_t *sat) {
 void print_sat(sat_t *sat) {
     printf("rows: %d\n", sat->rows);
     printf("columns: %d\n", sat->columns);
+    printf("current clauses: %d\n", sat->clauses);
     printf("problem:\n");
     for (int i = 0; i < sat->rows; i++) {
         for (int j = 0; j < sat->columns; j++) {
@@ -59,6 +61,7 @@ void remove_clause(sat_t *sat, int clear_row) {
     for (int i = 0; i < sat->columns; i++) {
         sat->content[clear_row][i] = 0;
     }
+    sat->clauses--;
 }
 
 int parse_file_and_init_sat(char *input_file, sat_t *sat) {
@@ -141,8 +144,9 @@ int parse_file_and_init_sat(char *input_file, sat_t *sat) {
             num_buffer[nb_pos] = '\0';
             if (nb_pos == 0) return -1;
             sat->rows = atoi(num_buffer); 
+            sat->clauses = sat->rows;
 
-            if (sat->rows <= 0 || sat->columns <= 0) {
+            if (sat->rows <= 0 || sat->columns <= 0 || sat->clauses <= 0) {
                 return -1;
             }
 
@@ -247,7 +251,7 @@ int parse_file_and_init_sat(char *input_file, sat_t *sat) {
 
 bool is_pure_literal(int atom, sat_t *sat) {
     int polarity = 0;
-    for (int i = 1; i < sat->rows; i++) {
+    for (int i = 0; i < sat->rows; i++) {
         if (sat->content[i][atom] == 0) {
             continue;
         }
@@ -260,15 +264,19 @@ bool is_pure_literal(int atom, sat_t *sat) {
             }
         }
     }
+    if (polarity == 0) {
+        return false;
+    }
     return true;
 }
 
 void eliminate_clauses_with_atom(int atom, sat_t *sat) {
-    for (int i = 1; i < sat->rows; i++) {
+    for (int i = 0; i < sat->rows; i++) {
         if (sat->content[i][atom] != 0) {
             for (int j = 0; j < sat->columns; j++) {
                 sat->content[i][j] = 0;
             }
+            sat->clauses--;
         }
     }
 }
@@ -301,32 +309,56 @@ bool is_unit_clause(sat_t *sat, int row, int *unit) {
     return false;
 }
 
-void propagate(sat_t *sat, int unit) {
+bool clause_empty(sat_t *sat, int row) {
+    for (int i = 0; i < sat->columns; i++) {
+        if (sat->content[row][i] != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int propagate(sat_t *sat, int unit) {
     int sign = (unit > 0 ? 1 : -1);
     for (int i = 0; i < sat->rows; i++) {
         if (sat->content[i][abs(unit) - 1] == sign) {
             for (int j = 0; j < sat->columns; j++) {
                 sat->content[i][j] = 0;
             }
+            sat->clauses--;
+            printf("%d\n", sat->clauses);
+            if(sat->clauses == 0) {
+                return 1;
+            }
         } 
         else if (sat->content[i][abs(unit) - 1] == -sign) {
             sat->content[i][abs(unit) - 1] = 0;
+            if (clause_empty(sat, i)) {
+                return -1;
+            }
         }
     }
+    return 0;
 }
 
-void unit_propagation(sat_t *sat) {
+int unit_propagation(sat_t *sat) {
     bool changed = true;
+    int satisfiable = 0;
     while (changed) {
         changed = false;
         for (int i = 0; i < sat->rows; i++) {
             int unit;
             if (is_unit_clause(sat, i, &unit)) {
-                propagate(sat, unit);
+                satisfiable = propagate(sat, unit);
+                if (satisfiable != 0) {
+                    return satisfiable;
+                }
                 changed = true;
+                break;
             }
         }
     }
+    return satisfiable;
 }
 
 
@@ -335,13 +367,14 @@ sat_t *sat_copy(sat_t *sat){
         return NULL;
     }
 
-    sat_t *sat_copy = malloc(sizeof(sat));
+    sat_t *sat_copy = malloc(sizeof(*sat_copy));
     if (!sat_copy) {
         return NULL;
     }
     
     sat_copy->rows = sat->rows;
     sat_copy->columns = sat->columns;
+    sat_copy->clauses = sat->clauses;
 
     sat_copy->content = malloc(sat_copy->rows * sizeof(int *));
     if (!sat_copy->content) {
@@ -367,12 +400,19 @@ sat_t *sat_copy(sat_t *sat){
 int main() {
     sat_t sat;
     sat_t *sat_p = &sat;
-    parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_6136_v_6_c_25_vic_1_4.cnf", sat_p);
+    //parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_6136_v_6_c_25_vic_1_4.cnf", sat_p);
+    parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_8342_v_3_c_12_vic_2_4.cnf", sat_p);
     print_sat(sat_p);
     sat_t *sat2_p = sat_copy(sat_p);
 
-    pure_literal_elimination(sat2_p);
-    unit_propagation(sat2_p);
+    //pure_literal_elimination(sat2_p);
+    int satisfiable = unit_propagation(sat2_p);
+    if (satisfiable == 1) {
+        printf("sat\n");
+    }
+    else if (satisfiable == -1) {
+        printf("unsat\n");
+    }
     printf("\n");
 
     print_sat(sat2_p);
