@@ -7,6 +7,7 @@ typedef struct {
     int clauses;    //n.o clauses not yet satisfied
     int rows;       //n.o clauses  
     int columns;    //n.o atoms
+    int *assignment; //complete or incomplete assignment for the boolean variables
     int **content;  //2d array of clauses
                     //format of 2d array:
                     // - each row is a clause
@@ -18,6 +19,7 @@ typedef struct {
 
 int init_sat_arr(sat_t *sat) {
     //allocate memory and initialise every entry to 0
+    sat->assignment = calloc(sat->columns, sizeof(int));
     sat->content = calloc(sat->rows, sizeof(int *));
     if (!sat->content) {
         return -1;
@@ -37,11 +39,33 @@ int init_sat_arr(sat_t *sat) {
     return 0;
 }
 
+void free_sat(sat_t *sat) {
+    if (!sat) {
+        return;
+    }
+    if (sat->content) {
+        for (int i = 0; i < sat->rows; i++) {
+            free(sat->content[i]);
+        }
+        free(sat->content);
+        sat->content = NULL;
+    }
+    if (sat->assignment) {
+        free(sat->assignment);
+        sat->assignment = NULL;
+    }
+    free(sat);
+}
+
 void print_sat(sat_t *sat) {
     printf("rows: %d\n", sat->rows);
     printf("columns: %d\n", sat->columns);
     printf("current clauses: %d\n", sat->clauses);
-    printf("problem:\n");
+    printf("current assignment: ");
+    for (int i = 0; i < sat->columns; i++) {
+        printf("%d ", sat->assignment[i]);
+    }
+    printf("\nproblem:\n");
     for (int i = 0; i < sat->rows; i++) {
         for (int j = 0; j < sat->columns; j++) {
             printf("%d ", sat->content[i][j]);
@@ -58,10 +82,17 @@ bool char_is_digit(char c) {
 }
 
 void remove_clause(sat_t *sat, int clear_row) {
+    if (!sat) {
+        return;
+    }
+    bool had_literal = false;
     for (int i = 0; i < sat->columns; i++) {
+        if (sat->content[clear_row][i] != 0) had_literal = true;
         sat->content[clear_row][i] = 0;
     }
-    sat->clauses--;
+    if (had_literal) {
+        sat->clauses--;
+    }
 }
 
 int parse_file_and_init_sat(char *input_file, sat_t *sat) {
@@ -319,22 +350,27 @@ bool clause_empty(sat_t *sat, int row) {
 }
 
 int propagate(sat_t *sat, int unit) {
+    if (!sat) {
+        return -1;
+    }
     int sign = (unit > 0 ? 1 : -1);
+    int var = abs(unit) - 1;
+    if (var < 0 || var >= sat->columns) return -1;
+
+    if (sat->assignment[var] != 0 && sat->assignment[var] != sign) {
+        return -1;
+    }
+    sat->assignment[var] = sign;
+
     for (int i = 0; i < sat->rows; i++) {
-        if (sat->content[i][abs(unit) - 1] == sign) {
-            for (int j = 0; j < sat->columns; j++) {
-                sat->content[i][j] = 0;
-            }
-            sat->clauses--;
-            printf("%d\n", sat->clauses);
-            if(sat->clauses == 0) {
-                return 1;
-            }
-        } 
-        else if (sat->content[i][abs(unit) - 1] == -sign) {
-            sat->content[i][abs(unit) - 1] = 0;
+        int lit = sat->content[i][var]; 
+        if (lit == sign) {
+            remove_clause(sat, i);
+            if (sat->clauses == 0) return 1;
+        } else if (lit == -sign) {
+            sat->content[i][var] = 0;
             if (clause_empty(sat, i)) {
-                return -1;
+                return -1; 
             }
         }
     }
@@ -342,23 +378,23 @@ int propagate(sat_t *sat, int unit) {
 }
 
 int unit_propagation(sat_t *sat) {
+    if (!sat) {
+        return -1;
+    }
     bool changed = true;
-    int satisfiable = 0;
     while (changed) {
         changed = false;
         for (int i = 0; i < sat->rows; i++) {
             int unit;
             if (is_unit_clause(sat, i, &unit)) {
-                satisfiable = propagate(sat, unit);
-                if (satisfiable != 0) {
-                    return satisfiable;
-                }
+                int res = propagate(sat, unit);
+                if (res != 0) return res; 
                 changed = true;
-                break;
+                break; 
             }
         }
     }
-    return satisfiable;
+    return 0;
 }
 
 
@@ -375,6 +411,16 @@ sat_t *sat_copy(sat_t *sat){
     sat_copy->rows = sat->rows;
     sat_copy->columns = sat->columns;
     sat_copy->clauses = sat->clauses;
+
+    sat_copy->assignment = malloc(sat_copy->columns * sizeof(int));
+    if (!sat_copy->assignment) {
+        free(sat_copy);
+        return NULL;
+    }
+    for (int i = 0; i < sat_copy->columns; i++) {
+        sat_copy->assignment[i] = sat->assignment[i];
+    }
+
 
     sat_copy->content = malloc(sat_copy->rows * sizeof(int *));
     if (!sat_copy->content) {
@@ -397,24 +443,113 @@ sat_t *sat_copy(sat_t *sat){
     return sat_copy;
 }
 
+int choose_unassigned_var(sat_t *sat) {
+    if (!sat) {
+        return -1;
+    }
+    for (int i = 0; i < sat->columns; i++) {
+        if (sat->assignment[i] == 0) return i;
+    }
+    return -1; 
+}
+
+int dpll(sat_t *sat) {
+    if (!sat) return -1;
+
+    int up = unit_propagation(sat);
+    if (up == 1) {
+        return 1; 
+    }
+    if (up == -1) {
+        return -1;
+    } 
+
+    if (sat->clauses == 0) {
+        return 1;
+    }
+
+    int var = choose_unassigned_var(sat);
+    if (var == -1) {
+        return (sat->clauses == 0) ? 1 : -1;
+    }
+
+    // true branch
+    sat_t *branch_true = sat_copy(sat);
+    if (!branch_true) {
+        return -1; 
+    }
+    if (branch_true->assignment[var] == 0) {
+        branch_true->assignment[var] = 1;
+    }
+    int r = propagate(branch_true, var + 1);
+    if (r == 1) { 
+        for (int i = 0; i < sat->columns; i++) {
+            if (sat->assignment[i] == 0 && branch_true->assignment[i] != 0) {
+                sat->assignment[i] = branch_true->assignment[i];
+            }
+        }
+        free_sat(branch_true);
+        return 1;
+    } else if (r == 0) {
+        int res = dpll(branch_true);
+        if (res == 1) {
+            for (int i = 0; i < sat->columns; i++) {
+                if (sat->assignment[i] == 0 && branch_true->assignment[i] != 0) {
+                    sat->assignment[i] = branch_true->assignment[i];
+                }
+            }
+            free_sat(branch_true);
+            return 1;
+        }
+    }
+    free_sat(branch_true);
+
+    // false branch
+    sat_t *branch_false = sat_copy(sat);
+    if (!branch_false) {
+        return -1;
+    }
+    if (branch_false->assignment[var] == 0) {
+        branch_false->assignment[var] = -1;
+    }
+    r = propagate(branch_false, -(var + 1));
+    if (r == 1) {
+        for (int i = 0; i < sat->columns; i++) {
+            if (sat->assignment[i] == 0 && branch_false->assignment[i] != 0) {
+                sat->assignment[i] = branch_false->assignment[i];
+            }
+        }
+        free_sat(branch_false);
+        return 1;
+    } else if (r == 0) {
+        int res = dpll(branch_false);
+        if (res == 1) {
+            for (int i = 0; i < sat->columns; i++) {
+                if (sat->assignment[i] == 0 && branch_false->assignment[i] != 0) {
+                    sat->assignment[i] = branch_false->assignment[i];
+                }
+            }
+            free_sat(branch_false);
+            return 1;
+        }
+    }
+    free_sat(branch_false);
+
+    return -1;
+}
+
 int main() {
     sat_t sat;
     sat_t *sat_p = &sat;
-    //parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_6136_v_6_c_25_vic_1_4.cnf", sat_p);
-    parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_8342_v_3_c_12_vic_2_4.cnf", sat_p);
+    parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_6136_v_6_c_25_vic_1_4.cnf", sat_p);
+    //parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_8342_v_3_c_12_vic_2_4.cnf", sat_p);
     print_sat(sat_p);
-    sat_t *sat2_p = sat_copy(sat_p);
-
-    //pure_literal_elimination(sat2_p);
-    int satisfiable = unit_propagation(sat2_p);
-    if (satisfiable == 1) {
+    
+    if (dpll(sat_p) == 1) {
         printf("sat\n");
     }
-    else if (satisfiable == -1) {
+    else {
         printf("unsat\n");
     }
-    printf("\n");
-
-    print_sat(sat2_p);
     return 0;
 }
