@@ -95,40 +95,30 @@ void remove_clause(sat_t *sat, int clear_row) {
     }
 }
 
-int parse_file_and_init_sat(char *input_file, sat_t *sat) {
-    FILE *fp = fopen(input_file, "r");
-    if (!fp) return -1;
+int parse_file_and_init_sat(sat_t *sat) {
 
     size_t capacity = 4096;
     size_t size = 0;
     char *buffer = malloc(capacity);
     if (!buffer) { 
-        fclose(fp);
         return -1;
     }
 
     size_t bytes_read;
-    while ((bytes_read = fread(buffer + size, 1, capacity - size, fp)) > 0) {
+    while ((bytes_read = fread(buffer + size, 1, capacity - size, stdin)) > 0) {
         size += bytes_read;
         if (size >= capacity - 1) {
             capacity *= 2;
             char *new_buffer = realloc(buffer, capacity);
             if (!new_buffer) {
                 free(buffer);
-                fclose(fp);
                 return -1;
             }
             buffer = new_buffer;
         }
     }
-    if (ferror(fp)) {
-        free(buffer);
-        fclose(fp);
-        return -1;
-    }
 
     buffer[size] = '\0';
-    fclose(fp);
 
     sat->rows = -1;
     sat->columns = -1;
@@ -542,10 +532,10 @@ int main(int argc, char **argv) {
     sat_t sat;
     sat_t *sat_p = &sat;
     //parse_file_and_init_sat("sat_tests/simple/prop_rnd_6136_v_6_c_25_vic_1_4.cnf", sat_p);
-    char file_path[1024] = "sat_tests/simple/";
-    strcat(file_path, argv[1]);
+    // char file_path[1024] = "sat_tests/simple/";
+    // strcat(file_path, argv[1]);
     //printf("\n\n%s\n\n", file_path);
-    parse_file_and_init_sat(file_path, sat_p);
+    parse_file_and_init_sat(sat_p);
     
     //parse_file_and_init_sat("sat-comp/sat_tests/simple/prop_rnd_8342_v_3_c_12_vic_2_4.cnf", sat_p);
     //print_sat(sat_p);
