@@ -31,7 +31,7 @@ To compile the source file, use the command:
 
 **gcc -o blyat-solver blyat-solver.c**
 
-# Author: 
+### Author: 
 Marek Wicha-Frankiewicz
 
 
