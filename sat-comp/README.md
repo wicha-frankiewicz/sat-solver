@@ -1,4 +1,4 @@
-# Blyat-Solver
+# Sat-Solver
 
 ## Overview
 This sat solver is an implementation of the DPLL algorihtm for sat. This solver takes as input files in the DIMACS CNF format and returns either "SATISFIABLE" or "UNSATISFIABLE".
@@ -29,7 +29,7 @@ The test results for each data set can all be found in the out_dir directory
 ## Compilation:
 To compile the source file, use the command:
 
-**gcc -o blyat-solver blyat-solver.c**
+**gcc -o sat-solver sat-solver.c**
 
 ## Author: 
 Marek Wicha-Frankiewicz
